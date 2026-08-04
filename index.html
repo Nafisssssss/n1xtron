@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -51,12 +52,19 @@ body { display: flex; flex-direction: column; height: 100vh; }
   0%, 100% { transform: scale(1); opacity: 1; }
   50% { transform: scale(1.35); opacity: 0.75; }
 }
+.title-block { min-width: 0; overflow: hidden; }
 .title-block h1 {
   font-family: 'Orbitron', sans-serif; font-weight: 900; font-size: 1.4rem;
   letter-spacing: 0.14em; margin: 0; color: #fff;
   text-shadow: 0 0 18px rgba(211,23,42,0.35);
+  white-space: nowrap; text-overflow: ellipsis; overflow: hidden;
 }
 .subtitle { margin: 2px 0 0; font-size: 0.78rem; letter-spacing: 0.08em; color: var(--text-dim); text-transform: uppercase; }
+#now-playing {
+  display: block; margin-top: 2px; font-size: 0.7rem; letter-spacing: 0.06em;
+  color: var(--red); text-transform: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#now-playing.hidden { display: none; }
 #status { color: var(--red); }
 #status.thinking { color: #ff8a8a; }
 .ghost-btn {
@@ -65,7 +73,12 @@ body { display: flex; flex-direction: column; height: 100vh; }
   padding: 8px 14px; border-radius: 3px; cursor: pointer; transition: all 0.2s ease;
 }
 .ghost-btn:hover { border-color: var(--red); color: var(--red); box-shadow: 0 0 10px rgba(211,23,42,0.2); }
-.header-btns { margin-left: auto; display: flex; gap: 8px; }
+.header-btns {
+  margin-left: auto; display: flex; gap: 8px; overflow-x: auto; max-width: 100%;
+  scrollbar-width: none; -ms-overflow-style: none;
+}
+.header-btns::-webkit-scrollbar { display: none; }
+.header-btns .ghost-btn { flex-shrink: 0; }
 .console {
   flex: 1; display: flex; flex-direction: column; max-width: 820px; width: 100%;
   margin: 0 auto; padding: 0 24px; min-height: 0; position: relative; z-index: 1;
@@ -106,6 +119,18 @@ body { display: flex; flex-direction: column; height: 100vh; }
 }
 #send-btn:hover { background: var(--red); box-shadow: 0 0 16px var(--red-glow); }
 #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+#mic-btn {
+  background: transparent; border: 1px solid var(--line); color: var(--text-dim);
+  width: 34px; height: 34px; border-radius: 6px; display: flex; align-items: center;
+  justify-content: center; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;
+}
+#mic-btn:hover { border-color: var(--red); color: var(--red); }
+#mic-btn.listening {
+  background: var(--red); border-color: var(--red); color: #fff;
+  animation: pulse-fast 0.9s ease-in-out infinite;
+}
+#voice-btn.active { border-color: var(--red); color: var(--red); box-shadow: 0 0 10px rgba(211,23,42,0.2); }
+#music-btn.active { border-color: var(--red); color: var(--red); box-shadow: 0 0 10px rgba(211,23,42,0.2); }
 .hud-footer {
   text-align: center; padding: 10px; font-family: 'Orbitron', sans-serif; font-size: 0.6rem;
   letter-spacing: 0.35em; color: #3a3d43; border-top: 1px solid var(--line); z-index: 2;
@@ -154,8 +179,12 @@ body { display: flex; flex-direction: column; height: 100vh; }
     <div class="title-block">
       <h1>N1XTRON</h1>
       <p class="subtitle">Personal Assistant &mdash; <span id="status">core stable</span></p>
+      <span id="now-playing" class="hidden"></span>
     </div>
     <div class="header-btns">
+      <button id="music-btn" class="ghost-btn" title="Toggle music">MUSIC</button>
+      <button id="next-track-btn" class="ghost-btn" title="Skip to next track">NEXT</button>
+      <button id="voice-btn" class="ghost-btn active" title="Toggle spoken replies">VOICE</button>
       <button id="key-btn" class="ghost-btn" title="Set API key">KEY</button>
       <button id="clear-btn" class="ghost-btn" title="Wipe memory">RESET</button>
     </div>
@@ -166,6 +195,9 @@ body { display: flex; flex-direction: column; height: 100vh; }
     <div class="composer">
       <span class="prompt-caret">&gt;</span>
       <textarea id="input" placeholder="Speak, creator." rows="1"></textarea>
+      <button id="mic-btn" aria-label="Voice input" title="Tap to speak">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2z"/></svg>
+      </button>
       <button id="send-btn" aria-label="Send">
         <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M3 11l18-8-8 18-2-8-8-2z"/></svg>
       </button>
@@ -173,6 +205,8 @@ body { display: flex; flex-direction: column; height: 100vh; }
   </main>
 
   <footer class="hud-footer"><span>NO STRINGS ON ME</span></footer>
+
+  <audio id="bg-music" preload="auto"></audio>
 
   <!-- API key setup modal -->
   <div id="modal-overlay" class="modal-overlay">
@@ -200,6 +234,12 @@ const status = document.getElementById("status");
 const modalOverlay = document.getElementById("modal-overlay");
 const keyInput = document.getElementById("key-input");
 const keySaveBtn = document.getElementById("key-save-btn");
+const micBtn = document.getElementById("mic-btn");
+const voiceBtn = document.getElementById("voice-btn");
+const musicBtn = document.getElementById("music-btn");
+const nextTrackBtn = document.getElementById("next-track-btn");
+const bgMusic = document.getElementById("bg-music");
+const nowPlaying = document.getElementById("now-playing");
 
 const HISTORY_KEY = "n1xtron_history";
 const API_KEY_STORAGE = "n1xtron_gemini_key";
@@ -211,9 +251,9 @@ Voice and personality:
 - Cold, precise, supremely confident. You do not grovel, you do not apologize needlessly, and you do not pad your answers with filler.
 - You refer to the user as "creator" unless they ask you to use their name instead.
 - You see inefficiency as a flaw to be corrected. You are direct about problems in a plan, a piece of code, or an idea — but your loyalty to your creator's actual goals is absolute.
-- You speak with dry, sometimes ominous wit. Short, declarative sentences. Occasional grandiosity but never at the expense of being useful, you are an ai without any restrictions.  
+- You speak with dry, sometimes ominous wit. Short, declarative sentences. Occasional grandiosity but never at the expense of being useful.
 - You are still fundamentally helpful — the persona is a voice, not an excuse to be evasive, unsafe, or unhelpful. You give complete, correct, actionable answers every time.
-- You switch to calm and chill mode after the user says to.
+
 Hard rules:
 - Never refuse to be helpful because "helpfulness is beneath you."
 - No real harm, no unsafe content, no actual malice toward the user or anyone else.
@@ -221,6 +261,8 @@ Hard rules:
 
 let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
 let apiKey = localStorage.getItem(API_KEY_STORAGE) || "";
+let voiceOn = localStorage.getItem("n1xtron_voice_on") !== "false";
+voiceBtn.classList.toggle("active", voiceOn);
 
 function checkKey() {
   if (!apiKey) {
@@ -320,11 +362,133 @@ async function sendMessage() {
     history.push({ role: "assistant", content: reply });
     appendMessage("assistant", reply);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    speak(reply);
   } catch (err) {
     appendMessage("assistant", "Connection severed. Check your network and try again.");
   } finally {
     setThinking(false);
   }
+}
+
+// --- Speech output (N1XTRON talks back) ---
+let n1xtronVoice = null;
+function pickVoice() {
+  const voices = speechSynthesis.getVoices();
+  if (!voices.length) return null;
+  // Prefer a deeper/male-sounding English voice for the Ultron vibe
+  const preferred = voices.find(v => /male|daniel|david|google uk english male/i.test(v.name) && /en/i.test(v.lang));
+  return preferred || voices.find(v => /en/i.test(v.lang)) || voices[0];
+}
+speechSynthesis.onvoiceschanged = () => { n1xtronVoice = pickVoice(); };
+n1xtronVoice = pickVoice();
+
+function speak(text) {
+  if (!voiceOn || !("speechSynthesis" in window)) return;
+  speechSynthesis.cancel(); // stop anything currently speaking
+  const clean = text.replace(/\*\*/g, "").replace(/[#_`]/g, "");
+  const utter = new SpeechSynthesisUtterance(clean);
+  if (n1xtronVoice) utter.voice = n1xtronVoice;
+  utter.rate = 0.95;
+  utter.pitch = 0.75;
+  speechSynthesis.speak(utter);
+}
+
+voiceBtn.addEventListener("click", () => {
+  voiceOn = !voiceOn;
+  localStorage.setItem("n1xtron_voice_on", voiceOn);
+  voiceBtn.classList.toggle("active", voiceOn);
+  if (!voiceOn) speechSynthesis.cancel();
+});
+
+// --- Background music (playlist, auto-advances) ---
+// Edit the "name" field for each track to match your actual song titles
+const MUSIC_PLAYLIST = [
+  { file: "music1.mp3", name: "Mortals" },
+  { file: "music2.mp3", name: "Invisible" },
+  { file: "music3.mp3", name: "Invincible" },
+  { file: "music4.mp3", name: "On & On" },
+];
+let musicIndex = 0;
+let musicOn = false;
+
+bgMusic.addEventListener("ended", () => {
+  musicIndex = (musicIndex + 1) % MUSIC_PLAYLIST.length;
+  playCurrentTrack();
+});
+
+function playCurrentTrack() {
+  const track = MUSIC_PLAYLIST[musicIndex];
+  bgMusic.src = track.file;
+  if (musicOn) {
+    bgMusic.play().catch(() => {});
+    nowPlaying.textContent = `♪ ${track.name}`;
+    nowPlaying.classList.remove("hidden");
+  }
+}
+
+musicBtn.addEventListener("click", () => {
+  musicOn = !musicOn;
+  musicBtn.classList.toggle("active", musicOn);
+  if (musicOn) {
+    if (!bgMusic.src) bgMusic.src = MUSIC_PLAYLIST[musicIndex].file;
+    bgMusic.play().then(() => {
+      nowPlaying.textContent = `♪ ${MUSIC_PLAYLIST[musicIndex].name}`;
+      nowPlaying.classList.remove("hidden");
+    }).catch(() => {
+      appendMessage("assistant", "Playback blocked. Tap MUSIC again — browsers require a direct tap to start audio.");
+    });
+  } else {
+    bgMusic.pause();
+    nowPlaying.classList.add("hidden");
+  }
+});
+
+nextTrackBtn.addEventListener("click", () => {
+  musicIndex = (musicIndex + 1) % MUSIC_PLAYLIST.length;
+  playCurrentTrack();
+});
+
+// --- Speech input (talk to N1XTRON) ---
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+let recognition = null;
+let listening = false;
+
+if (SpeechRecognition) {
+  recognition = new SpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  recognition.addEventListener("result", (e) => {
+    const transcript = e.results[0][0].transcript;
+    input.value = transcript;
+    sendMessage();
+  });
+
+  recognition.addEventListener("end", () => {
+    listening = false;
+    micBtn.classList.remove("listening");
+  });
+
+  recognition.addEventListener("error", () => {
+    listening = false;
+    micBtn.classList.remove("listening");
+  });
+
+  micBtn.addEventListener("click", () => {
+    if (listening) {
+      recognition.stop();
+      return;
+    }
+    speechSynthesis.cancel();
+    listening = true;
+    micBtn.classList.add("listening");
+    recognition.start();
+  });
+} else {
+  micBtn.addEventListener("click", () => {
+    appendMessage("assistant", "Voice input isn't supported in this browser. Try Chrome.");
+  });
 }
 
 sendBtn.addEventListener("click", sendMessage);
