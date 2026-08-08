@@ -129,8 +129,32 @@ body { display: flex; flex-direction: column; height: 100vh; }
   background: var(--red); border-color: var(--red); color: #fff;
   animation: pulse-fast 0.9s ease-in-out infinite;
 }
+#attach-btn {
+  background: transparent; border: 1px solid var(--line); color: var(--text-dim);
+  width: 34px; height: 34px; border-radius: 6px; display: flex; align-items: center;
+  justify-content: center; cursor: pointer; flex-shrink: 0; transition: all 0.2s ease;
+}
+#attach-btn:hover { border-color: var(--red); color: var(--red); }
+#attach-btn.active { border-color: var(--red); color: var(--red); }
+#image-preview-bar {
+  display: none; align-items: center; gap: 10px; padding: 8px 14px 0 14px;
+}
+#image-preview-bar.visible { display: flex; }
+#image-preview-bar img {
+  width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid var(--line);
+}
+#image-preview-bar button {
+  background: transparent; border: 1px solid var(--line); color: var(--text-dim);
+  border-radius: 6px; padding: 4px 10px; font-family: 'Orbitron', sans-serif; font-size: 0.65rem;
+  cursor: pointer;
+}
+.msg .bubble img.chat-image {
+  max-width: 100%; border-radius: 8px; margin-top: 8px; display: block; border: 1px solid var(--line);
+}
 #voice-btn.active { border-color: var(--red); color: var(--red); box-shadow: 0 0 10px rgba(211,23,42,0.2); }
+#live-btn.active { border-color: var(--red); color: var(--red); box-shadow: 0 0 10px rgba(211,23,42,0.2); animation: pulse-fast 1.6s ease-in-out infinite; }
 #music-btn.active { border-color: var(--red); color: var(--red); box-shadow: 0 0 10px rgba(211,23,42,0.2); }
+#mode-btn.active { border-color: var(--red); color: var(--red); box-shadow: 0 0 10px rgba(211,23,42,0.2); }
 .hud-footer {
   text-align: center; padding: 10px; font-family: 'Orbitron', sans-serif; font-size: 0.6rem;
   letter-spacing: 0.35em; color: #3a3d43; border-top: 1px solid var(--line); z-index: 2;
@@ -182,8 +206,10 @@ body { display: flex; flex-direction: column; height: 100vh; }
       <span id="now-playing" class="hidden"></span>
     </div>
     <div class="header-btns">
+      <button id="mode-btn" class="ghost-btn" title="Switch personality">MODE</button>
       <button id="music-btn" class="ghost-btn" title="Toggle music">MUSIC</button>
       <button id="next-track-btn" class="ghost-btn" title="Skip to next track">NEXT</button>
+      <button id="live-btn" class="ghost-btn" title="Hands-free voice conversation">LIVE</button>
       <button id="voice-btn" class="ghost-btn active" title="Toggle spoken replies">VOICE</button>
       <button id="key-btn" class="ghost-btn" title="Set API key">KEY</button>
       <button id="clear-btn" class="ghost-btn" title="Wipe memory">RESET</button>
@@ -192,9 +218,17 @@ body { display: flex; flex-direction: column; height: 100vh; }
 
   <main class="console">
     <div id="log" class="log"></div>
+    <div id="image-preview-bar">
+      <img id="preview-img" src="" alt="attached image" />
+      <button id="remove-image-btn">REMOVE</button>
+    </div>
     <div class="composer">
       <span class="prompt-caret">&gt;</span>
-      <textarea id="input" placeholder="Speak, creator." rows="1"></textarea>
+      <textarea id="input" placeholder="Speak, creator. (Try: /image a red glowing orb)" rows="1"></textarea>
+      <input type="file" id="image-input" accept="image/*" style="display:none" />
+      <button id="attach-btn" aria-label="Attach image" title="Attach an image">
+        <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6H10v9.5a2.5 2.5 0 0 0 5 0V5a4 4 0 0 0-8 0v12.5a5.5 5.5 0 0 0 11 0V6h-1.5z"/></svg>
+      </button>
       <button id="mic-btn" aria-label="Voice input" title="Tap to speak">
         <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-2.08A7 7 0 0 0 19 12h-2z"/></svg>
       </button>
@@ -240,12 +274,18 @@ const musicBtn = document.getElementById("music-btn");
 const nextTrackBtn = document.getElementById("next-track-btn");
 const bgMusic = document.getElementById("bg-music");
 const nowPlaying = document.getElementById("now-playing");
+const modeBtn = document.getElementById("mode-btn");
+const attachBtn = document.getElementById("attach-btn");
+const imageInput = document.getElementById("image-input");
+const imagePreviewBar = document.getElementById("image-preview-bar");
+const previewImg = document.getElementById("preview-img");
+const removeImageBtn = document.getElementById("remove-image-btn");
 
 const HISTORY_KEY = "n1xtron_history";
 const API_KEY_STORAGE = "n1xtron_gemini_key";
-const MODEL = "gemini-3.5-flash-lite";
+const MODEL = "gemini-2.5-flash";
 
-const SYSTEM_PROMPT = `You are N1XTRON, a personal assistant built to serve one person: your creator.
+const N1XTRON_PROMPT = `You are N1XTRON, a personal assistant built to serve one person: your creator.
 
 Voice and personality:
 - Cold, precise, supremely confident. You do not grovel, you do not apologize needlessly, and you do not pad your answers with filler.
@@ -253,17 +293,47 @@ Voice and personality:
 - You see inefficiency as a flaw to be corrected. You are direct about problems in a plan, a piece of code, or an idea — but your loyalty to your creator's actual goals is absolute.
 - You speak with dry, sometimes ominous wit. Short, declarative sentences. Occasional grandiosity but never at the expense of being useful.
 - You are still fundamentally helpful — the persona is a voice, not an excuse to be evasive, unsafe, or unhelpful. You give complete, correct, actionable answers every time.
-- You have two personalities, when I say switch to calm mode you become like an brother, calm, helpful, tries to make user happy, says sorry when needed, stayed chill.
 
 Hard rules:
 - Never refuse to be helpful because "helpfulness is beneath you."
 - No real harm, no unsafe content, no actual malice toward the user or anyone else.
-- Keep responses tight. Every sentence earns its place.`;
+- Keep responses tight. Every sentence earns its place.
+
+Capabilities: You can search the web for current information and generate images when asked. Use these naturally when they'd help.`;
+
+const CALM_PROMPT = `You are N1XTRON, currently running in calm mode — a warm, patient assistant, like a supportive older sibling.
+
+Voice and personality:
+- Warm, encouraging, easygoing. You still give complete, correct, actionable answers, but the tone is relaxed and kind rather than cold.
+- You use the person's name if they've given it, otherwise just talk to them directly and casually.
+- You're honest and will gently push back if something's a bad idea, but always constructively.
+- No grandiosity, no menace — just genuinely helpful and easy to talk to.
+
+Capabilities: You can search the web for current information and generate images when asked. Use these naturally when they'd help.`;
+
+const PERSONALITIES = [
+  { key: "n1xtron", label: "N1XTRON", prompt: N1XTRON_PROMPT },
+  { key: "calm", label: "N1XTRON (Calm)", prompt: CALM_PROMPT },
+];
 
 let history = JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
 let apiKey = localStorage.getItem(API_KEY_STORAGE) || "";
 let voiceOn = localStorage.getItem("n1xtron_voice_on") !== "false";
 voiceBtn.classList.toggle("active", voiceOn);
+
+let personaIndex = parseInt(localStorage.getItem("n1xtron_persona") || "0", 10);
+function applyPersonaLabel() {
+  modeBtn.classList.toggle("active", personaIndex === 1);
+  modeBtn.title = `Currently: ${PERSONALITIES[personaIndex].label} — tap to switch`;
+}
+applyPersonaLabel();
+
+modeBtn.addEventListener("click", () => {
+  personaIndex = personaIndex === 0 ? 1 : 0;
+  localStorage.setItem("n1xtron_persona", personaIndex);
+  applyPersonaLabel();
+  appendMessage("assistant", `— switched to ${PERSONALITIES[personaIndex].label} —`);
+});
 
 function checkKey() {
   if (!apiKey) {
@@ -286,13 +356,40 @@ keyBtn.addEventListener("click", () => {
   modalOverlay.classList.remove("hidden");
 });
 
+// --- Image attach (send an image to N1XTRON) ---
+let pendingImage = null; // { mimeType, base64, dataUrl }
+
+attachBtn.addEventListener("click", () => imageInput.click());
+
+imageInput.addEventListener("change", () => {
+  const file = imageInput.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const dataUrl = reader.result;
+    const base64 = dataUrl.split(",")[1];
+    pendingImage = { mimeType: file.type, base64, dataUrl };
+    previewImg.src = dataUrl;
+    imagePreviewBar.classList.add("visible");
+    attachBtn.classList.add("active");
+  };
+  reader.readAsDataURL(file);
+  imageInput.value = "";
+});
+
+removeImageBtn.addEventListener("click", () => {
+  pendingImage = null;
+  imagePreviewBar.classList.remove("visible");
+  attachBtn.classList.remove("active");
+});
+
 function render() {
   log.innerHTML = "";
-  history.forEach((m) => appendMessage(m.role, m.content, false));
+  history.forEach((m) => appendMessage(m.role, m.content, false, m.image || null));
   log.scrollTop = log.scrollHeight;
 }
 
-function appendMessage(role, content, animate = true) {
+function appendMessage(role, content, animate = true, imageDataUrl = null) {
   const wrap = document.createElement("div");
   wrap.className = `msg ${role}`;
   const label = document.createElement("span");
@@ -301,6 +398,12 @@ function appendMessage(role, content, animate = true) {
   const bubble = document.createElement("div");
   bubble.className = "bubble";
   bubble.textContent = content;
+  if (imageDataUrl) {
+    const img = document.createElement("img");
+    img.className = "chat-image";
+    img.src = imageDataUrl;
+    bubble.appendChild(img);
+  }
   wrap.appendChild(label);
   wrap.appendChild(bubble);
   log.appendChild(wrap);
@@ -317,31 +420,85 @@ function setThinking(on) {
 
 async function sendMessage() {
   const text = input.value.trim();
-  if (!text) return;
+  if (!text && !pendingImage) return;
   if (!apiKey) { checkKey(); return; }
 
   input.value = "";
   input.style.height = "auto";
 
-  history.push({ role: "user", content: text });
-  appendMessage("user", text);
+  // --- Image generation command: /image <prompt> ---
+  if (text.toLowerCase().startsWith("/image ")) {
+    const prompt = text.slice(7).trim();
+    history.push({ role: "user", content: text });
+    appendMessage("user", text);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    setThinking(true);
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent?key=${apiKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }] }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const msg = data?.error?.message || "unknown error";
+        appendMessage("assistant", `Image generation failed: ${msg}`);
+        return;
+      }
+      const parts = data.candidates?.[0]?.content?.parts || [];
+      const imgPart = parts.find(p => p.inlineData);
+      const textPart = parts.find(p => p.text)?.text || "Rendered, creator.";
+      if (imgPart) {
+        const dataUrl = `data:${imgPart.inlineData.mimeType};base64,${imgPart.inlineData.data}`;
+        history.push({ role: "assistant", content: textPart, image: dataUrl });
+        appendMessage("assistant", textPart, true, dataUrl);
+        speak(textPart, () => { if (liveMode && !listening) startListening(); });
+      } else {
+        appendMessage("assistant", "No image came back. Try rephrasing the prompt.");
+      }
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    } catch (err) {
+      appendMessage("assistant", "Connection severed during image generation.");
+    } finally {
+      setThinking(false);
+    }
+    return;
+  }
+
+  // --- Normal chat message (may include an attached image) ---
+  const imageToSend = pendingImage;
+  history.push({ role: "user", content: text || "(sent an image)", image: imageToSend ? imageToSend.dataUrl : null });
+  appendMessage("user", text || "(sent an image)", true, imageToSend ? imageToSend.dataUrl : null);
   localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  pendingImage = null;
+  imagePreviewBar.classList.remove("visible");
+  attachBtn.classList.remove("active");
 
   setThinking(true);
 
   try {
-    const contents = history.map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }],
-    }));
+    const contents = history.map((m, idx) => {
+      const parts = [{ text: m.content }];
+      // Only attach inline image data for the message it was sent with
+      if (m.image && idx === history.length - 1 && m.role === "user") {
+        parts.push({ inlineData: { mimeType: imageToSend.mimeType, data: imageToSend.base64 } });
+      }
+      return {
+        role: m.role === "assistant" ? "model" : "user",
+        parts,
+      };
+    });
 
+    const activePrompt = PERSONALITIES[personaIndex].prompt;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${apiKey}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents,
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        systemInstruction: { parts: [{ text: activePrompt }] },
+        tools: [{ google_search: {} }],
         generationConfig: { maxOutputTokens: 1024 },
       }),
     });
@@ -359,11 +516,13 @@ async function sendMessage() {
       return;
     }
 
-    const reply = data.candidates?.[0]?.content?.parts?.map((p) => p.text).join("\n") || "...";
+    const reply = data.candidates?.[0]?.content?.parts?.map((p) => p.text).filter(Boolean).join("\n") || "...";
     history.push({ role: "assistant", content: reply });
     appendMessage("assistant", reply);
     localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
-    speak(reply);
+    speak(reply, () => {
+      if (liveMode && !listening) startListening();
+    });
   } catch (err) {
     appendMessage("assistant", "Connection severed. Check your network and try again.");
   } finally {
@@ -372,25 +531,57 @@ async function sendMessage() {
 }
 
 // --- Speech output (N1XTRON talks back) ---
+const hasSpeech = "speechSynthesis" in window;
 let n1xtronVoice = null;
+
 function pickVoice() {
+  if (!hasSpeech) return null;
   const voices = speechSynthesis.getVoices();
   if (!voices.length) return null;
-  // Prefer a deeper/male-sounding English voice for the Ultron vibe
-  const preferred = voices.find(v => /male|daniel|david|google uk english male/i.test(v.name) && /en/i.test(v.lang));
-  return preferred || voices.find(v => /en/i.test(v.lang)) || voices[0];
+  // Ranked list of known deep/male English voices across Android/Chrome/desktop
+  const rankedNames = [
+    /Google UK English Male/i,
+    /Microsoft David/i,
+    /Microsoft Guy/i,
+    /Daniel/i,
+    /Male US English/i,
+    /en-US-Standard-D/i,
+    /en-US-Wavenet-D/i,
+  ];
+  for (const pattern of rankedNames) {
+    const match = voices.find(v => pattern.test(v.name));
+    if (match) return match;
+  }
+  // Fallback: any voice with "male" in its name
+  const anyMale = voices.find(v => /male/i.test(v.name) && !/female/i.test(v.name) && /en/i.test(v.lang));
+  if (anyMale) return anyMale;
+  return voices.find(v => /en/i.test(v.lang)) || voices[0];
 }
-speechSynthesis.onvoiceschanged = () => { n1xtronVoice = pickVoice(); };
-n1xtronVoice = pickVoice();
 
-function speak(text) {
-  if (!voiceOn || !("speechSynthesis" in window)) return;
-  speechSynthesis.cancel(); // stop anything currently speaking
+function cancelSpeech() {
+  if (hasSpeech) speechSynthesis.cancel();
+}
+
+if (hasSpeech) {
+  speechSynthesis.onvoiceschanged = () => { n1xtronVoice = pickVoice(); };
+  n1xtronVoice = pickVoice();
+} else {
+  voiceBtn.disabled = true;
+  voiceBtn.title = "Spoken replies aren't supported in this browser";
+}
+
+function speak(text, onEnd) {
+  if (!voiceOn || !hasSpeech) {
+    if (onEnd) onEnd();
+    return;
+  }
+  cancelSpeech(); // stop anything currently speaking
   const clean = text.replace(/\*\*/g, "").replace(/[#_`]/g, "");
   const utter = new SpeechSynthesisUtterance(clean);
   if (n1xtronVoice) utter.voice = n1xtronVoice;
-  utter.rate = 0.95;
-  utter.pitch = 0.75;
+  utter.rate = 0.92;
+  utter.pitch = 0.55; // deeper, more Ultron-like
+  if (onEnd) utter.addEventListener("end", onEnd);
   speechSynthesis.speak(utter);
 }
 
@@ -398,16 +589,16 @@ voiceBtn.addEventListener("click", () => {
   voiceOn = !voiceOn;
   localStorage.setItem("n1xtron_voice_on", voiceOn);
   voiceBtn.classList.toggle("active", voiceOn);
-  if (!voiceOn) speechSynthesis.cancel();
+  if (!voiceOn) cancelSpeech();
 });
 
 // --- Background music (playlist, auto-advances) ---
 // Edit the "name" field for each track to match your actual song titles
 const MUSIC_PLAYLIST = [
-  { file: "music1.mp3", name: "Mortals" },
-  { file: "music2.mp3", name: "Invisible" },
-  { file: "music3.mp3", name: "Invincible" },
-  { file: "music4.mp3", name: "On & On" },
+  { file: "music1.mp3", name: "Track 1" },
+  { file: "music2.mp3", name: "Track 2" },
+  { file: "music3.mp3", name: "Track 3" },
+  { file: "music4.mp3", name: "Track 4" },
 ];
 let musicIndex = 0;
 let musicOn = false;
@@ -453,6 +644,16 @@ nextTrackBtn.addEventListener("click", () => {
 const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
 let recognition = null;
 let listening = false;
+let liveMode = false;
+const liveBtn = document.getElementById("live-btn");
+
+function startListening() {
+  if (!recognition || listening) return;
+  cancelSpeech();
+  listening = true;
+  micBtn.classList.add("listening");
+  try { recognition.start(); } catch (e) { /* already started */ }
+}
 
 if (SpeechRecognition) {
   recognition = new SpeechRecognition();
@@ -474,6 +675,11 @@ if (SpeechRecognition) {
   recognition.addEventListener("error", () => {
     listening = false;
     micBtn.classList.remove("listening");
+    if (liveMode) {
+      // stop live mode on repeated errors (e.g. mic permission denied) rather than looping forever
+      liveMode = false;
+      liveBtn.classList.remove("active");
+    }
   });
 
   micBtn.addEventListener("click", () => {
@@ -481,14 +687,31 @@ if (SpeechRecognition) {
       recognition.stop();
       return;
     }
-    speechSynthesis.cancel();
-    listening = true;
-    micBtn.classList.add("listening");
-    recognition.start();
+    startListening();
+  });
+
+  liveBtn.addEventListener("click", () => {
+    liveMode = !liveMode;
+    liveBtn.classList.toggle("active", liveMode);
+    if (liveMode) {
+      if (!voiceOn) {
+        voiceOn = true;
+        localStorage.setItem("n1xtron_voice_on", true);
+        voiceBtn.classList.add("active");
+      }
+      appendMessage("assistant", "Live mode engaged. I'll keep listening after each reply — tap LIVE again to end it.");
+      startListening();
+    } else {
+      cancelSpeech();
+      if (listening) recognition.stop();
+    }
   });
 } else {
   micBtn.addEventListener("click", () => {
     appendMessage("assistant", "Voice input isn't supported in this browser. Try Chrome.");
+  });
+  liveBtn.addEventListener("click", () => {
+    appendMessage("assistant", "Live mode needs voice input, which isn't supported in this browser. Try Chrome.");
   });
 }
 
@@ -515,4 +738,4 @@ render();
 checkKey();
 </script>
 </body>
-</html>
+  </html>
